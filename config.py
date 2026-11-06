@@ -40,7 +40,7 @@ TRANSFER_K_ETA_MAX = 5000.0
 TRANSFER_KAPPA0 = 3.0e-5
 TRANSFER_K_EPSILON = 2.0e-3
 TRANSFER_DELTA_ETA = 0.5
-TRANSFER_K_BLOCK = 1024        # k values per CAMB source request (sets memory use)
+TRANSFER_K_BLOCK = 32          # k values per task and CAMB request; CAMB fills all 24 evolve variables (~5.4 MB per k)
 TRANSFER_L_ACCURACY_BOOST = 4
 
 

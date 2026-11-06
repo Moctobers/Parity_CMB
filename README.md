@@ -54,6 +54,22 @@ On a cluster, the expensive steps split into independent tasks with
 same arguments: `kernels` splits over ℓ, `fisher` over Gauss-Legendre nodes, and
 `camb_inputs.py transfer` over (k block × ℓ chunk) with `--n-l-chunks`.
 
+## Transfer table on the cluster (ℓ ≤ 2000)
+
+`cluster/` holds the SLURM scripts. On the login node, with the camb environment active:
+
+```sh
+cluster/submit_transfer.sh test      # one core, ~15 min: timing, memory, check vs the stored table, batch plan
+cluster/submit_transfer.sh run       # array job, one task per k block (1 core), then a merge job
+cluster/submit_transfer.sh missing   # resubmit the tasks that left no file, then merge again
+```
+
+Tasks split k, not ℓ: every ℓ chunk re-runs CAMB for its k block. The projection cost per k
+grows with k (~6 s for all ℓ ≤ 2000 at kη₀ < 5, ~330 s at kη₀ = 5000, on a 2.1 GHz Xeon core),
+so the highest-k tasks are submitted first. CAMB fills all 24 evolve variables (5.4 MB per k),
+which sets the memory per task (`config.TRANSFER_K_BLOCK`). The table goes to
+`data/Tgamma_lk_camb_source_lmax2000.npz`; point `config.TRANSFER_FILE` at it to use it.
+
 ## Tests
 
 ```sh
