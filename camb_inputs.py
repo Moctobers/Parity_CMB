@@ -14,6 +14,7 @@ Task files go to <out>_tasks/ next to --out (default config.TRANSFER_FILE), and 
 existing table is only replaced with --overwrite.
 """
 import argparse
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +33,10 @@ def camb_params(lmax):
     pars.set_cosmology(H0=config.H0, ombh2=config.OMBH2, omch2=config.OMCH2, mnu=0.06,
                        omk=0.0, tau=config.TAU)
     pars.InitPower.set_params(As=config.A_S, ns=config.N_S, r=0.0, pivot_scalar=config.K_PIVOT)
-    pars.set_for_lmax(lmax, lens_potential_accuracy=1, lens_margin=150, k_eta_fac=2.5)
+    # the l margin for lensing is called lens_margin in camb 1.x and lens_output_margin in camb 2
+    margin = "lens_output_margin" if "lens_output_margin" in inspect.signature(pars.set_for_lmax).parameters \
+        else "lens_margin"
+    pars.set_for_lmax(lmax, lens_potential_accuracy=1, k_eta_fac=2.5, **{margin: 150})
     pars.WantCls, pars.WantTransfer, pars.DoLensing = True, True, True
     pars.DoLateRadTruncation = False
     acc = pars.Accuracy
