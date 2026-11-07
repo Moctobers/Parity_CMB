@@ -77,23 +77,24 @@ def camb_source(results, k, eta):
     return source, time.perf_counter() - t
 
 
-def compare_with_stored(picks, sources, eta, eta0, k):
+def load_stored():
+    """The stored transfer table (config.TRANSFER_FILE), or None."""
     path = Path(config.TRANSFER_FILE)
     if not path.exists():
-        return print(f"{path} not found: copy it to the cluster to compare (skipped)")
+        return None
     with np.load(path) as f:
-        T, k_old, ells_old, eta0_old = f["Tgamma_lk"], f["k_arr"], f["ells_sparse"].astype(int), float(f["eta0"][0])
-        camb_old = str(f["camb_version"][0]) if "camb_version" in f.files else "unknown"
-    print(f"stored: camb {camb_old}, eta0 = {eta0_old:.8f}; here eta0 = {eta0:.8f} "
-          f"(relative difference {abs(eta0 - eta0_old) / eta0_old:.1e})")
-    if len(k_old) != len(k) or not np.allclose(k_old, k, rtol=1e-9, atol=0):
-        return print("WARNING: the k grid differs from the stored table; no row comparison")
-    rows = np.array([l for l in range(2, 51) if l in ells_old])
-    old_rows = T[np.searchsorted(ells_old, rows)]
+        return dict(T=f["Tgamma_lk"], k=f["k_arr"], ells=f["ells_sparse"].astype(int), eta0=float(f["eta0"][0]),
+                    camb=str(f["camb_version"][0]) if "camb_version" in f.files else "unknown")
+
+
+def compare_with_stored(stored, picks, sources, k_test, eta, eta0):
+    """Delta_l(k) from this CAMB at the stored k values, against the stored rows l = 2..50."""
+    rows = np.array([l for l in range(2, 51) if l in stored["ells"]])
+    old_rows = stored["T"][np.searchsorted(stored["ells"], rows)]
     scale = np.abs(old_rows).max(axis=1)
     worst = 0.0
     for name, idx in picks:
-        new = ci.project(sources[name], k[idx], eta, eta0, rows)
+        new = ci.project(sources[name], k_test[idx], eta, eta0, rows)
         err = np.abs(new - old_rows[:, idx]).max(axis=1) / scale
         worst = max(worst, err.max())
         print(f"{name:>20}: max_k |new - stored| / max_k |stored|: worst {err.max():.1e} "
@@ -133,6 +134,17 @@ def main():
     k, eta = ci.k_grid(eta0), ci.eta_grid(eta0)
     print(f"get_background {t_background:.1f} s; eta0 = {eta0:.8f} Mpc; {len(k)} k "
           f"(k eta0 = {k[0] * eta0:g}..{k[-1] * eta0:g}); {len(eta)} eta nodes")
+    stored = load_stored()
+    if stored is None:
+        print(f"{config.TRANSFER_FILE} not found: copy it here for the check in section 4")
+    else:
+        print(f"stored table: camb {stored['camb']}, eta0 = {stored['eta0']:.8f} "
+              f"(relative difference {abs(eta0 - stored['eta0']) / stored['eta0']:.1e}), {len(stored['k'])} k")
+    # The k grid scales with eta0, so the CAMB test runs at the stored k values when the grids match in length.
+    same_grid = stored is not None and len(stored["k"]) == len(k)
+    k_test = stored["k"] if same_grid else k
+    if same_grid:
+        print(f"CAMB test below uses the stored k values (max |k/k_stored - 1| = {np.abs(k / k_test - 1).max():.1e})")
 
     section("3. CAMB T_source")
     picks = [("spread over k", np.unique(np.linspace(0, len(k) - 1, N_CAMB_TEST).round().astype(int))),
@@ -140,7 +152,7 @@ def main():
     sources, per_k = {}, []
     base = peak_mb()
     for i, (name, idx) in enumerate(picks):
-        sources[name], dt = camb_source(results, k[idx], eta)
+        sources[name], dt = camb_source(results, k_test[idx], eta)
         per_k.append(dt / len(idx))
         print(f"{len(idx)} k, {name:>13}: {dt:6.1f} s ({dt / len(idx):.2f} s per k)", flush=True)
         if i == 0:
@@ -151,7 +163,12 @@ def main():
           f"variables, {n_vars * len(eta) * 8 / 2**20:.1f} MB per k, before returning T_source)")
 
     section("4. Delta_l(k), l = 2..50, against the stored table")
-    compare_with_stored(picks, sources, eta, eta0, k)
+    if stored is None:
+        print("skipped: no stored table")
+    elif not same_grid:
+        print(f"skipped: the stored table has {len(stored['k'])} k, this grid {len(k)}")
+    else:
+        compare_with_stored(stored, picks, sources, k_test, eta, eta0)
     del sources
 
     section(f"5. projection time over l = {ells[0]}..{ells[-1]} in {len(chunks)} chunk(s)")
