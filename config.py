@@ -14,11 +14,13 @@ TRANSFER_FILE = DATA / "Tgamma_lk_camb_source.npz"  # Delta_ell(k) from CAMB T_s
 
 # Planck 2018 cosmology
 H0, OMBH2, OMCH2, TAU = 67.32117, 0.0223828, 0.1201075, 0.05430842
-A_S, N_S, K_PIVOT = 2.1e-9, 0.9660499, 0.05
+A_S, N_S, K_PIVOT = 2.1e-9, 0.9660499, 0.05      # N_S enters CAMB's C_l only; Delta_l(k) is per unit curvature
 
-# Template powers p_a = (alpha, beta, gamma) - 4 + n_s, plus the physical p = 0 leg
+# Template powers p_a = (alpha, beta, gamma) - 4 + n_s, plus the physical p = 0 leg. The template
+# uses a scale-invariant spectrum: p_a = (-5, -4, -3) and no k_pivot factor in the amplitude.
+TEMPLATE_N_S = 1.0
 ALPHA, BETA, GAMMA = -2.0, -1.0, 0.0
-POWERS = (ALPHA - 4 + N_S, BETA - 4 + N_S, GAMMA - 4 + N_S, 0.0)
+POWERS = (ALPHA - 4 + TEMPLATE_N_S, BETA - 4 + TEMPLATE_N_S, GAMMA - 4 + TEMPLATE_N_S, 0.0)
 COUPLING_G = 2e7
 
 # Instrument: N_ell = (Delta_T / T_CMB)^2 exp(ell^2 / ell_b^2), ell_b = sqrt(8 ln 2) / theta_FWHM
@@ -68,7 +70,7 @@ def chi_star():
 def zeta_amplitude():
     """Real amplitude A in zeta = (i/2) i^(sum ell) A x (ell-dependent factors)."""
     return (COUPLING_G * (2 * np.pi**2 * A_S) ** 3 * (4 * np.pi) ** 4
-            * K_PIVOT ** (3 * (1 - N_S)))
+            * K_PIVOT ** (3 * (1 - TEMPLATE_N_S)))
 
 
 def fisher_prefactor():

@@ -120,6 +120,6 @@ def radial_model(B, dB, x, powers=config.POWERS):
                           for (c, i), (_, q, w) in zip(encoded, families)])
 
 
-def sw_model(lmax, chi=None):
+def sw_model(lmax, chi=None, powers=config.POWERS):
     chi = config.chi_star() if chi is None else chi
-    return radial_model(*sw_kernels(lmax, chi), [chi])
+    return radial_model(*sw_kernels(lmax, chi, powers), [chi], powers)

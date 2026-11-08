@@ -31,6 +31,8 @@ Needs only numpy and scipy (camb for `camb_inputs.py`).
   and the full triangle range of the internal ℓ*.
 - F is full sky. `run.py` stores SNR = √(f_sky F) with `--f-sky` (default 0.4).
 - The factorisable Fisher uses only the unprojected Z, since F_odd = F_unprojected.
+- The template uses n_s = 1 (`config.TEMPLATE_N_S`): p = (−5, −4, −3), no k_pivot factor in A.
+  `config.N_S` = 0.966 is the CAMB sky (C_ℓ); Δ_ℓ(k) does not depend on n_s.
 
 ## Running
 

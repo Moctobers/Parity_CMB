@@ -26,12 +26,21 @@ from fisher_direct import fisher_direct
 from fisher_factorisable import fisher_factorisable, wigner_d
 
 REF = np.load(Path(__file__).parent / "tests" / "reference.npz")
+# The references were made with the template at n_s = 0.9660499.
+REF_N_S = 0.9660499
+REF_POWERS = tuple(p - 4 + REF_N_S for p in (config.ALPHA, config.BETA, config.GAMMA)) + (0.0,)
 FULL = os.environ.get("FULL") == "1"
 CL = REF["cl_total"]
 
 
 def relative(a, b):
     return np.max(np.abs(np.asarray(a) - b)) / np.max(np.abs(b))
+
+
+@pytest.fixture
+def ref_template(monkeypatch):
+    """The amplitude of the reference template (its k_pivot factor depends on n_s)."""
+    monkeypatch.setattr(config, "TEMPLATE_N_S", REF_N_S)
 
 
 def test_terms():
@@ -93,13 +102,14 @@ def test_sw_kernels():
     ell = np.arange(2, 21)
     np.testing.assert_allclose(4 * np.pi * (-0.2) * 2 * np.pi**2 * config.A_S * B[0, 2:, 0],
                                2 * np.pi * config.A_S / (25 * ell * (ell + 1)), rtol=1e-13)
-    # The numerical k-integrals reproduce the closed forms for Delta_l = -j_l(k chi)/5.
+    # The numerical k-integrals reproduce the closed forms for Delta_l = -j_l(k chi)/5. Checked at
+    # n_s = 0.966, where no closed form vanishes (for n_s = 1, dB^{-3} = 0: test_template_scale_invariant).
     chi, k = config.chi_star(), kernels.load_transfer()["k"]
     ells = np.arange(2, 11)
     T = np.zeros((11, len(k)))
     T[2:] = [-spherical_jn(ell, k * chi) / 5 for ell in ells]
-    B, dB = kernels.transfer_kernels(dict(T=T, k=k, ells=ells), np.array([chi]), ells)
-    Bs, dBs = kernels.sw_kernels(10, chi)
+    B, dB = kernels.transfer_kernels(dict(T=T, k=k, ells=ells), np.array([chi]), ells, powers=REF_POWERS)
+    Bs, dBs = kernels.sw_kernels(10, chi, powers=REF_POWERS)
     np.testing.assert_allclose(B[:3, :, 0], Bs[:3, 2:, 0], rtol=5e-4)
     np.testing.assert_allclose(dB[:3, :, 0], dBs[:3, 2:, 0], rtol=5e-4)
 
@@ -107,17 +117,17 @@ def test_sw_kernels():
 def test_transfer_kernels_reference():
     x = REF["kernel_x"]
     assert np.array_equal(kernels.radial_grid(config.SMITH_GRID, config.chi_star(), 14150.094559439956), x)
-    B, dB = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 9))
+    B, dB = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 9), powers=REF_POWERS)
     assert relative(B, REF["kernel_B"][:, 2:]) < 1e-12 and relative(dB, REF["kernel_dB"][:, 2:]) < 1e-12
 
 
 def reference_models(lmax):
-    return {"sw": kernels.sw_model(lmax),
+    return {"sw": kernels.sw_model(lmax, powers=REF_POWERS),
             "camb": kernels.radial_model(REF["kernel_B"][:, :lmax + 1], REF["kernel_dB"][:, :lmax + 1],
                                          REF["kernel_x"])}
 
 
-def test_zeta_and_direct_reference():
+def test_zeta_and_direct_reference(ref_template):
     for name, model in reference_models(8).items():
         grid = trispectrum.grid(model, 8)
         assert np.array_equal(grid["ells"], REF["ells"]) and np.array_equal(grid["star"], REF["star"])
@@ -127,26 +137,42 @@ def test_zeta_and_direct_reference():
 
 
 @pytest.mark.skipif(not FULL, reason="set FULL=1")
-def test_direct_reference_lmax20():
+def test_direct_reference_lmax20(ref_template):
     x = REF["kernel_x"]
     B, dB = np.zeros((4, 21, len(x))), np.zeros((4, 21, len(x)))
-    B[:, 2:], dB[:, 2:] = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 21))
-    for name, model in (("sw", kernels.sw_model(20)), ("camb", kernels.radial_model(B, dB, x))):
+    B[:, 2:], dB[:, 2:] = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 21), powers=REF_POWERS)
+    for name, model in (("sw", kernels.sw_model(20, powers=REF_POWERS)), ("camb", kernels.radial_model(B, dB, x))):
         _, F = fisher_direct(trispectrum.grid(model, 20), CL)
         assert relative(F, REF[f"F_direct_{name}"]) < 1e-12
 
 
-def test_fisher_factorisable_sw():
-    L, F_direct = fisher_direct(trispectrum.grid(kernels.sw_model(12), 12), CL)
-    F = fisher_factorisable(kernels.sw_model(12), CL, L)
+def test_template_scale_invariant():
+    """n_s = 1: integer powers, no pivot factor, rational SW kernels, and both Fisher methods agree."""
+    assert config.POWERS == (-5.0, -4.0, -3.0, 0.0)
+    assert config.zeta_amplitude() == config.COUPLING_G * (2 * np.pi**2 * config.A_S) ** 3 * (4 * np.pi) ** 4
+    B, dB = kernels.sw_kernels(20, config.chi_star())
+    ell = np.arange(2, 21.0)
+    for row, poly in zip(B[:3, 2:, 0], ((ell - 1) * ell * (ell + 1) * (ell + 2),
+                                        (ell - 0.5) * (ell + 0.5) * (ell + 1.5), ell * (ell + 1))):
+        np.testing.assert_allclose(row * poly / (row[0] * poly[0]), 1, rtol=1e-12)   # B^p_l ∝ 1/poly(l)
+    assert not dB[2].any()                                             # dB^{-3} = 0 at the SW shell
+    model = kernels.sw_model(10)
+    L, F_direct = fisher_direct(trispectrum.grid(model, 10), CL)
+    assert relative(fisher_factorisable(model, CL, L), F_direct) < 1e-10
+
+
+def test_fisher_factorisable_sw(ref_template):
+    sw = lambda lmax: kernels.sw_model(lmax, powers=REF_POWERS)      # noqa: E731
+    L, F_direct = fisher_direct(trispectrum.grid(sw(12), 12), CL)
+    F = fisher_factorisable(sw(12), CL, L)
     assert relative(F, F_direct) < 1e-10 and relative(F, REF["F_fact_sw"][:11]) < 1e-10
-    F_parity = fisher_factorisable(kernels.sw_model(12), CL, [12], parity_weight=True)
+    F_parity = fisher_factorisable(sw(12), CL, [12], parity_weight=True)
     assert abs(0.5 * (F[-1] - F_parity[0]) / F[-1] - 1) < 1e-10        # F_odd = F_unprojected
     if FULL:
-        assert relative(fisher_factorisable(kernels.sw_model(20), CL, L.tolist() + list(range(13, 21))),
+        assert relative(fisher_factorisable(sw(20), CL, L.tolist() + list(range(13, 21))),
                         REF["F_fact_sw"]) < 1e-10
         # Cross-machine round-off is ~1e-9 here: the contraction cancels by ~1e5.
-        assert abs(fisher_factorisable(kernels.sw_model(100), CL, [100])[0] / REF["F_fact_sw_100"] - 1) < 1e-8
+        assert abs(fisher_factorisable(sw(100), CL, [100])[0] / REF["F_fact_sw_100"] - 1) < 1e-8
 
 
 def test_fisher_factorisable_transfer():

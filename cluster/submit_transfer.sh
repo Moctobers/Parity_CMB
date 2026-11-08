@@ -76,7 +76,7 @@ test)
 run | missing)
     export TASK_LIST="output/slurm/transfer_tasks_$(date +%Y%m%d_%H%M%S).txt"
     task_list "$1" > "$TASK_LIST"
-    n=$(wc -l < "$TASK_LIST")
+    n=$(grep -c . "$TASK_LIST" || true)                 # non-empty lines: task ids
     if (( n == 0 )); then
         echo "no tasks to run"
         exit 0
