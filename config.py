@@ -10,7 +10,7 @@ DATA = Path(__file__).parent / "data"
 OUTPUT = Path(__file__).parent / "output"
 CL_TT_FILE = DATA / "Cl_TT.npy"                    # lensed C_ell^TT, starts at ell = 2
 CHI_STAR_FILE = DATA / "chi_star.npy"
-TRANSFER_FILE = DATA / "Tgamma_lk_camb_source.npz"  # Delta_ell(k) from CAMB T_source
+TRANSFER_FILE = DATA / "Tgamma_lk_camb_source_lmax2000.npz"  # Delta_ell(k) from CAMB T_source
 
 # Planck 2018 cosmology
 H0, OMBH2, OMCH2, TAU = 67.32117, 0.0223828, 0.1201075, 0.05430842
