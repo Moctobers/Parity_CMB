@@ -41,7 +41,8 @@ def kernels_command(args):
     out = args.out or config.DATA / f"kernels_lmax{args.lmax}.npz"
     table = kernels.load_transfer()
     x = kernels.radial_grid(args.grid, config.chi_star(), table["eta0"])
-    meta = dict(x=x, grid=args.grid, lmax=args.lmax)
+    meta = dict(x=x, grid=args.grid, lmax=args.lmax, powers=np.array(config.POWERS),
+                transfer_file=Path(config.TRANSFER_FILE).name)
     if args.merge:
         def add(parts):
             B = np.zeros((4, args.lmax + 1, len(x)))
@@ -79,6 +80,9 @@ def load_model(source, lmax, path=None):
     with np.load(path) as f:
         if int(f["lmax"]) < lmax:
             raise SystemExit(f"{path} only reaches l = {int(f['lmax'])}")
+        if "powers" not in f.files or not np.allclose(f["powers"], config.POWERS):
+            raise SystemExit(f"{path} was made for other template powers than config.POWERS; "
+                             f"remake it with: python run.py kernels --lmax {lmax}")
         model = kernels.radial_model(f["B"][:, :lmax + 1], f["dB"][:, :lmax + 1], f["x"])
         return model, str(f["grid"])
 

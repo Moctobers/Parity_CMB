@@ -36,9 +36,9 @@ def load_transfer(path=config.TRANSFER_FILE):
     with np.load(path) as f:
         if not bool(f["complete"][0]):
             raise RuntimeError(f"{path} is marked incomplete")
+        # Delta_l(k) is per unit primordial curvature: A_s and n_s do not enter it.
         stored = dict(zip(f["cosmology_parameter_names"], f["cosmology_parameter_values"]))
-        expected = dict(H0=config.H0, ombh2=config.OMBH2, omch2=config.OMCH2,
-                        tau=config.TAU, A_s=config.A_S, n_s=config.N_S)
+        expected = dict(H0=config.H0, ombh2=config.OMBH2, omch2=config.OMCH2, tau=config.TAU)
         if any(stored[name] != value for name, value in expected.items()):
             raise RuntimeError(f"{path} was made with a different cosmology")
         ells = f["ells_sparse"].astype(int)
