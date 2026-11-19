@@ -1,14 +1,14 @@
 #!/bin/bash
-# Radial-grid convergence of the factorisable Fisher with the full transfer function.
+# Factorisable Fisher with the full transfer function on several radial grids, to test convergence in the grid.
 #
-#   bash cluster/grid_study.sh submit     # per grid: kernels job -> Fisher array over mu nodes -> merge
-#   bash cluster/grid_study.sh summary    # F(L) of every grid, relative to the base grid
-#   DRY_RUN=1 bash cluster/grid_study.sh submit
+#   bash cluster/fisher_factorisable_radial_grid.sh submit     # per grid: kernels job -> Fisher array over mu nodes -> merge
+#   bash cluster/fisher_factorisable_radial_grid.sh summary    # F(L) of every grid, relative to the base grid
+#   DRY_RUN=1 bash cluster/fisher_factorisable_radial_grid.sh submit
 #
 # Run it on the login node with the Python environment active, after making the n_s = 1 C_l with
 # `python camb_inputs.py spectra --lmax 2000` (inside intjob). Kernels go to
 # data/kernels_lmax<LMAX>_<grid>.npz (kept and reused), results to output/fisher_transfer_lmax<LMAX>_<grid>.npz.
-# Settings can be overridden on the command line, e.g.  LMAX=50 N_CHUNKS=10 bash cluster/grid_study.sh submit
+# Settings can be overridden on the command line, e.g.  LMAX=50 N_CHUNKS=10 bash cluster/fisher_factorisable_radial_grid.sh submit
 set -euo pipefail
 cd "$(dirname "$0")/.."                                 # codes_dev
 
@@ -51,23 +51,23 @@ submit)
         if [[ -f "$kern" ]]; then
             echo "$name: reusing $kern"
         else
-            kid=$(submit "${opts[@]}" --job-name="kern-$name" --time=03:00:00 --mem=4G \
-                --output="output/slurm/grid_kernels_${name}_%j.out" \
+            kid=$(submit "${opts[@]}" --job-name="radial-kern-$name" --time=03:00:00 --mem=4G \
+                --output="output/slurm/fisher_radial_kernels_${name}_%j.out" \
                 cluster/run.sbatch kernels --lmax "$LMAX" --grid "$spec" --out "$kern")
             dep=(--dependency=afterok:"$kid")
         fi
         fisher=(fisher --source transfer --lmax "$LMAX" --ell-step "$ELL_STEP" --kernels "$kern" --out "$out"
                 --n-chunks "$N_CHUNKS")
-        fid=$(submit "${opts[@]}" "${dep[@]}" --job-name="fish-$name" --array="0-$((N_CHUNKS - 1))" \
-            --time="$TASK_TIME" --mem=2G --output="output/slurm/grid_fisher_${name}_%A_%a.out" \
+        fid=$(submit "${opts[@]}" "${dep[@]}" --job-name="radial-fisher-$name" --array="0-$((N_CHUNKS - 1))" \
+            --time="$TASK_TIME" --mem=2G --output="output/slurm/fisher_radial_${name}_%A_%a.out" \
             cluster/run.sbatch "${fisher[@]}")
-        mid=$(submit "${opts[@]}" --dependency=afterany:"$fid" --job-name="merge-$name" --time=00:20:00 \
-            --mem=2G --output="output/slurm/grid_merge_${name}_%j.out" cluster/run.sbatch "${fisher[@]}" --merge)
+        mid=$(submit "${opts[@]}" --dependency=afterany:"$fid" --job-name="radial-merge-$name" --time=00:20:00 \
+            --mem=2G --output="output/slurm/fisher_radial_merge_${name}_%j.out" cluster/run.sbatch "${fisher[@]}" --merge)
         echo "$name: kernels ${kid:-reused}, Fisher array $fid ($N_CHUNKS tasks), merge $mid"
         unset kid
     done
-    echo "watch: squeue -u \$USER;  then: bash cluster/grid_study.sh summary"
-    echo "rerun a failed chunk i of a grid with the fish-<grid> command above and --array=i"
+    echo "watch: squeue -u \$USER;  then: bash cluster/fisher_factorisable_radial_grid.sh summary"
+    echo "rerun a failed chunk i of a grid with the radial-fisher-<grid> command above and --array=i"
     ;;
 summary)
     python - "$LMAX" "${NAMES[@]}" <<'EOF'

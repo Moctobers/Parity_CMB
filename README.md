@@ -80,8 +80,8 @@ The table goes to `data/Tgamma_lk_camb_source_lmax2000.npz`.
 study at ℓ_max = 100 (four grids, ~45 core-h; make the n_s = 1 C_ℓ first):
 
 ```sh
-bash cluster/grid_study.sh submit     # per grid: kernels -> Fisher array over μ nodes -> merge
-bash cluster/grid_study.sh summary    # F(L) per grid relative to the base grid
+bash cluster/fisher_factorisable_radial_grid.sh submit     # per grid: kernels -> Fisher array over μ nodes -> merge
+bash cluster/fisher_factorisable_radial_grid.sh summary    # F(L) per grid relative to the base grid
 ```
 
 ## Tests
