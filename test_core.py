@@ -29,6 +29,8 @@ REF = np.load(Path(__file__).parent / "tests" / "reference.npz")
 # The references were made with the template at n_s = 0.9660499.
 REF_N_S = 0.9660499
 REF_POWERS = tuple(p - 4 + REF_N_S for p in (config.ALPHA, config.BETA, config.GAMMA)) + (0.0,)
+# ... and with the l <= 50 transfer table (camb 1.6.6), kept under its original name.
+REF_TABLE = config.DATA / "Tgamma_lk_camb_source.npz"
 FULL = os.environ.get("FULL") == "1"
 CL = REF["cl_total"]
 
@@ -40,7 +42,7 @@ def relative(a, b):
 @pytest.fixture
 def ref_template(monkeypatch):
     """The amplitude of the reference template (its k_pivot factor depends on n_s)."""
-    monkeypatch.setattr(config, "TEMPLATE_N_S", REF_N_S)
+    monkeypatch.setattr(config, "N_S", REF_N_S)
 
 
 def test_terms():
@@ -104,7 +106,7 @@ def test_sw_kernels():
                                2 * np.pi * config.A_S / (25 * ell * (ell + 1)), rtol=1e-13)
     # The numerical k-integrals reproduce the closed forms for Delta_l = -j_l(k chi)/5. Checked at
     # n_s = 0.966, where no closed form vanishes (for n_s = 1, dB^{-3} = 0: test_template_scale_invariant).
-    chi, k = config.chi_star(), kernels.load_transfer()["k"]
+    chi, k = config.chi_star(), kernels.load_transfer(REF_TABLE)["k"]
     ells = np.arange(2, 11)
     T = np.zeros((11, len(k)))
     T[2:] = [-spherical_jn(ell, k * chi) / 5 for ell in ells]
@@ -117,7 +119,7 @@ def test_sw_kernels():
 def test_transfer_kernels_reference():
     x = REF["kernel_x"]
     assert np.array_equal(kernels.radial_grid(config.SMITH_GRID, config.chi_star(), 14150.094559439956), x)
-    B, dB = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 9), powers=REF_POWERS)
+    B, dB = kernels.transfer_kernels(kernels.load_transfer(REF_TABLE), x, np.arange(2, 9), powers=REF_POWERS)
     assert relative(B, REF["kernel_B"][:, 2:]) < 1e-12 and relative(dB, REF["kernel_dB"][:, 2:]) < 1e-12
 
 
@@ -140,7 +142,7 @@ def test_zeta_and_direct_reference(ref_template):
 def test_direct_reference_lmax20(ref_template):
     x = REF["kernel_x"]
     B, dB = np.zeros((4, 21, len(x))), np.zeros((4, 21, len(x)))
-    B[:, 2:], dB[:, 2:] = kernels.transfer_kernels(kernels.load_transfer(), x, np.arange(2, 21), powers=REF_POWERS)
+    B[:, 2:], dB[:, 2:] = kernels.transfer_kernels(kernels.load_transfer(REF_TABLE), x, np.arange(2, 21), powers=REF_POWERS)
     for name, model in (("sw", kernels.sw_model(20, powers=REF_POWERS)), ("camb", kernels.radial_model(B, dB, x))):
         _, F = fisher_direct(trispectrum.grid(model, 20), CL)
         assert relative(F, REF[f"F_direct_{name}"]) < 1e-12
@@ -182,7 +184,7 @@ def test_fisher_factorisable_transfer():
     determinant of B^p_l(x_max) over four distinct l, so it first appears at
     l_max = 6 and decays as x_max grows; here x_max = 50000 Mpc.
     """
-    table, chi = kernels.load_transfer(), config.chi_star()
+    table, chi = kernels.load_transfer(REF_TABLE), config.chi_star()
     x = kernels.radial_grid("0:chi:1000,chi:eta0:40,eta0:50000:1000", chi, table["eta0"])
     B, dB = np.zeros((4, 9, len(x))), np.zeros((4, 9, len(x)))
     B[:, 2:], dB[:, 2:] = kernels.transfer_kernels(table, x, np.arange(2, 9))

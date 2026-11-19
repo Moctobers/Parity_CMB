@@ -31,8 +31,9 @@ Needs only numpy and scipy (camb for `camb_inputs.py`).
   and the full triangle range of the internal ℓ*.
 - F is full sky. `run.py` stores SNR = √(f_sky F) with `--f-sky` (default 0.4).
 - The factorisable Fisher uses only the unprojected Z, since F_odd = F_unprojected.
-- The template uses n_s = 1 (`config.TEMPLATE_N_S`): p = (−5, −4, −3), no k_pivot factor in A.
-  `config.N_S` = 0.966 is the CAMB sky (C_ℓ); Δ_ℓ(k) does not depend on n_s.
+- n_s = 1 throughout (`config.N_S`): template powers p = (−5, −4, −3), no k_pivot factor in A, and
+  the CAMB C_ℓ. Δ_ℓ(k) does not depend on n_s or A_s, so transfer tables are not checked for them.
+  The tests use `tests/reference.npz` (n_s = 0.966) and the ℓ ≤ 50 table `data/Tgamma_lk_camb_source.npz`.
 
 ## Running
 
@@ -58,19 +59,30 @@ same arguments: `kernels` splits over ℓ, `fisher` over Gauss-Legendre nodes, a
 
 ## Transfer table on the cluster (ℓ ≤ 2000)
 
-`cluster/` holds the SLURM scripts. On the login node, with the camb environment active:
+Job scripts in `cluster/`, submitted with plain `sbatch` from `codes_dev` (settings in each header):
 
 ```sh
-cluster/submit_transfer.sh test      # one core, ~15 min: timing, memory, check vs the stored table, batch plan
-cluster/submit_transfer.sh run       # array job, one task per k block (1 core), then a merge job
-cluster/submit_transfer.sh missing   # resubmit the tasks that left no file, then merge again
+sbatch cluster/transfer_test.sbatch                        # ~10 min: timing, memory, check vs the l <= 50 table
+sbatch cluster/transfer.sbatch                             # 509 one-core tasks, one per k block (32 k), all l
+sbatch --dependency=afterany:<jobid> cluster/transfer_merge.sbatch
+sbatch --array=3,17,250 cluster/transfer.sbatch            # rerun missing tasks (the merge log says how to list them)
+sbatch cluster/spectra.sbatch                              # C_l^TT and chi_* (24 GB, 4 cores)
 ```
 
-Tasks split k, not ℓ: every ℓ chunk re-runs CAMB for its k block. The projection cost per k
-grows with k (~6 s for all ℓ ≤ 2000 at kη₀ < 5, ~330 s at kη₀ = 5000, on a 2.1 GHz Xeon core),
-so the highest-k tasks are submitted first. CAMB fills all 24 evolve variables (5.4 MB per k),
-which sets the memory per task (`config.TRANSFER_K_BLOCK`). The table goes to
-`data/Tgamma_lk_camb_source_lmax2000.npz`; point `config.TRANSFER_FILE` at it to use it.
+Tasks split k, not ℓ: every ℓ chunk would re-run CAMB for its k block. The projection cost per k
+grows with k (~10 s for all ℓ ≤ 2000 at kη₀ < 5, ~300-360 s at kη₀ = 5000 per core), and CAMB
+fills all 24 evolve variables (~11 MB per k), which sets the memory per task (`config.TRANSFER_K_BLOCK`).
+The table goes to `data/Tgamma_lk_camb_source_lmax2000.npz`.
+
+## Factorisable Fisher on the cluster
+
+`cluster/run.sbatch` runs any `run.py` command as a job (array jobs get `--task`). The radial-grid
+study at ℓ_max = 100 (four grids, ~45 core-h; make the n_s = 1 C_ℓ first):
+
+```sh
+bash cluster/grid_study.sh submit     # per grid: kernels -> Fisher array over μ nodes -> merge
+bash cluster/grid_study.sh summary    # F(L) per grid relative to the base grid
+```
 
 ## Tests
 
