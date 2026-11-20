@@ -143,11 +143,12 @@ def plot_zeta(args):
 
 
 def snr_curve(curve, lmax):
-    """L, SNR and f_sky for "method:source" (output/<method>_<source>_lmax<lmax>.npz) or
+    """L, SNR and f_sky for "method:source" (output/<method>_<source>_<config.EXPERIMENT>_lmax<lmax>.npz) or
     "method:source=a.npz+b.npz" (points of several runs joined; a later file wins at a shared L)."""
     spec, _, files = curve.partition("=")
     method, source = spec.split(":")
-    paths = [Path(p) for p in files.split("+")] if files else [config.OUTPUT / f"{method}_{source}_lmax{lmax}.npz"]
+    paths = [Path(p) for p in files.split("+")] if files else \
+        [config.OUTPUT / f"{method}_{source}_{config.EXPERIMENT}_lmax{lmax}.npz"]
     points, f_sky, grids = {}, set(), set()
     for path in paths:
         if not path.exists():

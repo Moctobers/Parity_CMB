@@ -29,7 +29,10 @@ Needs only numpy and scipy (camb for `camb_inputs.py`).
   bulk plus the IBP boundary terms at x_min (−1) and x_max (+1).
 - ζ is stored for odd Σℓ only (it vanishes for even Σℓ), all orderings of ℓ₁..ℓ₄,
   and the full triangle range of the internal ℓ*.
-- F is full sky. `run.py` stores SNR = √(f_sky F) with `--f-sky` (default 0.4).
+- F is full sky. `run.py` stores SNR = √(f_sky F); f_sky defaults to the experiment's.
+- Noise: `config.EXPERIMENT` ("so" or "planck", or `run.py --experiment`) picks the white-noise channels
+  in `config.EXPERIMENTS`, combined by inverse variance. Results are named by it, e.g.
+  `output/fisher_transfer_so_lmax2000.npz`. Kernels do not depend on the noise.
 - The factorisable Fisher uses only the unprojected Z, since F_odd = F_unprojected.
 - n_s = 1 throughout (`config.N_S`): template powers p = (−5, −4, −3), no k_pivot factor in A, and
   the CAMB C_ℓ. Δ_ℓ(k) does not depend on n_s or A_s, so transfer tables are not checked for them.

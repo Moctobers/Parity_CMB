@@ -24,11 +24,18 @@ ALPHA, BETA, GAMMA = -2.0, -1.0, 0.0
 POWERS = (ALPHA - 4 + N_S, BETA - 4 + N_S, GAMMA - 4 + N_S, 0.0)
 COUPLING_G = 2e7
 
-# Instrument: N_ell = (Delta_T / T_CMB)^2 exp(ell^2 / ell_b^2), ell_b = sqrt(8 ln 2) / theta_FWHM
+# Instrument. Each channel: N_ell = (Delta_T / T_CMB)^2 exp(ell^2 / ell_b^2), ell_b = sqrt(8 ln 2) / theta_FWHM,
+# white noise; channels are combined by inverse variance. Choose the experiment here (or run.py --experiment).
 T_CMB_UK = 2.7255e6
-NOISE_UK_ARCMIN = 5.0
-BEAM_FWHM_ARCMIN = 1.5
-F_SKY = 0.4
+EXPERIMENT = "so"
+EXPERIMENTS = {
+    # Idealised SO-goal-like LAT: one effective channel, no atmospheric 1/f noise, no foregrounds.
+    "so": dict(channels=((5.0, 1.5),), f_sky=0.4),
+    # Planck 2018, 100 / 143 / 217 GHz (Planck 2018 I, Table 4: 1.29 / 0.55 / 0.78 uK deg;
+    # beams 9.66' / 7.22' / 4.90'), as (uK arcmin, FWHM arcmin); white noise.
+    "planck": dict(channels=((77.4, 9.66), (33.0, 7.22), (46.8, 4.90)), f_sky=0.7),
+}
+F_SKY = EXPERIMENTS[EXPERIMENT]["f_sky"]
 LMIN = 2
 
 # Radial grid as "start:stop:step" segments in Mpc. "chi" and "eta0" stand for
@@ -47,19 +54,22 @@ TRANSFER_K_BLOCK = 32          # k values per task and CAMB request; CAMB fills 
 TRANSFER_L_ACCURACY_BOOST = 4
 
 
-def noise_tt(lmax):
-    """White noise with a Gaussian beam, indexed from ell = 0."""
+def noise_tt(lmax, experiment=None):
+    """Beam-deconvolved white noise of the experiment's channels combined, indexed from ell = 0."""
     arcmin = np.pi / (180.0 * 60.0)
-    ell_b = np.sqrt(8.0 * np.log(2.0)) / (BEAM_FWHM_ARCMIN * arcmin)
     ell = np.arange(lmax + 1)
-    return (NOISE_UK_ARCMIN / T_CMB_UK * arcmin) ** 2 * np.exp(ell**2 / ell_b**2)
+    inverse = np.zeros(lmax + 1)
+    for noise, fwhm in EXPERIMENTS[experiment or EXPERIMENT]["channels"]:
+        ell_b = np.sqrt(8.0 * np.log(2.0)) / (fwhm * arcmin)
+        inverse += 1.0 / ((noise / T_CMB_UK * arcmin) ** 2 * np.exp(ell**2 / ell_b**2))
+    return 1.0 / inverse
 
 
-def total_spectrum(lmax):
-    """C_ell + N_ell indexed from ell = 0; zero below LMIN."""
+def total_spectrum(lmax, experiment=None):
+    """C_ell + N_ell of the experiment (default EXPERIMENT), indexed from ell = 0; zero below LMIN."""
     cl = np.zeros(lmax + 1)
     cl[LMIN:] = np.load(CL_TT_FILE)[: lmax + 1 - LMIN]
-    out = cl + noise_tt(lmax)
+    out = cl + noise_tt(lmax, experiment)
     out[:LMIN] = 0.0
     return out
 

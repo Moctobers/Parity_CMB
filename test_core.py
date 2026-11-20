@@ -31,12 +31,20 @@ REF_N_S = 0.9660499
 REF_POWERS = tuple(p - 4 + REF_N_S for p in (config.ALPHA, config.BETA, config.GAMMA)) + (0.0,)
 # ... and with the l <= 50 transfer table (camb 1.6.6), kept under its original name.
 REF_TABLE = config.DATA / "Tgamma_lk_camb_source.npz"
+# ... and with chi_* from camb 1.6.6 (data/chi_star.npy now holds the camb 2.0.5 value).
+REF_CHI_STAR = 13869.525202013909
 FULL = os.environ.get("FULL") == "1"
 CL = REF["cl_total"]
 
 
 def relative(a, b):
     return np.max(np.abs(np.asarray(a) - b)) / np.max(np.abs(b))
+
+
+@pytest.fixture(autouse=True)
+def ref_chi_star(monkeypatch):
+    """All tests use the chi_* of the references."""
+    monkeypatch.setattr(config, "chi_star", lambda: REF_CHI_STAR)
 
 
 @pytest.fixture

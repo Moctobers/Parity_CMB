@@ -9,7 +9,9 @@
     python run.py fisher --source transfer --lmax 2000 --n-chunks 400 --task 7   # one mu chunk
     python run.py fisher --source transfer --lmax 2000 --n-chunks 400 --merge
 
-F is full sky. Every output also stores SNR = sqrt(f_sky F) for --f-sky (default config.F_SKY).
+F is full sky. Every output also stores SNR = sqrt(f_sky F) for --f-sky (default: the experiment's).
+--experiment (default config.EXPERIMENT) sets the noise; it is part of the direct/fisher output names,
+e.g. output/fisher_transfer_so_lmax2000.npz, and is stored in the file with its noise channels.
 Transfer kernels are read from --kernels (default data/kernels_lmax<lmax>.npz).
 """
 import argparse
@@ -87,7 +89,14 @@ def load_model(source, lmax, path=None):
         return model, str(f["grid"])
 
 
+def noise_meta(args):
+    """The experiment and its (uK arcmin, FWHM arcmin) channels, stored with every result."""
+    return dict(experiment=args.experiment,
+                noise_channels=np.array(config.EXPERIMENTS[args.experiment]["channels"]))
+
+
 def save(path, F, f_sky, **extra):
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, F=F, snr=np.sqrt(f_sky * np.maximum(F, 0)), f_sky=f_sky, **extra)
     print(f"saved {path}; SNR(lmax) = {np.sqrt(f_sky * max(F[-1], 0)):.6g} at f_sky = {f_sky}")
@@ -97,32 +106,37 @@ def direct_command(args):
     model, grid_spec = load_model(args.source, args.lmax, args.kernels)
     t = time.time()
     grid = trispectrum.grid(model, args.lmax)
-    L, F = fisher_direct(grid, config.total_spectrum(args.lmax))
+    L, F = fisher_direct(grid, config.total_spectrum(args.lmax, args.experiment))
     print(f"{len(grid['zeta'])} odd configurations in {time.time() - t:.0f} s")
-    out = args.out or config.OUTPUT / f"direct_{args.source}_lmax{args.lmax}.npz"
-    save(out, F, args.f_sky, L=L, grid_spec=grid_spec, **(grid if args.save_grid else {}))
+    out = args.out or config.OUTPUT / f"direct_{args.source}_{args.experiment}_lmax{args.lmax}.npz"
+    save(out, F, args.f_sky, L=L, grid_spec=grid_spec, **noise_meta(args), **(grid if args.save_grid else {}))
 
 
 def fisher_command(args):
     model, grid_spec = load_model(args.source, args.lmax, args.kernels)
     cutoffs = np.unique(np.r_[np.arange(args.ell_step, args.lmax, args.ell_step), args.lmax])
     cutoffs = cutoffs[cutoffs >= config.LMIN]
-    out = args.out or config.OUTPUT / f"fisher_{args.source}_lmax{args.lmax}.npz"
+    out = args.out or config.OUTPUT / f"fisher_{args.source}_{args.experiment}_lmax{args.lmax}.npz"
     if args.merge:
-        F = merge_chunks(out, args.n_chunks, lambda parts: sum(p["F_partial"] for p in parts))
-        return save(out, F, args.f_sky, L=cutoffs, grid_spec=grid_spec)
+        def add(parts):
+            made = {str(p.get("experiment", "unknown")) for p in parts}
+            if made != {args.experiment}:
+                raise SystemExit(f"chunks were made for {sorted(made)}, not --experiment {args.experiment}")
+            return sum(p["F_partial"] for p in parts)
+        F = merge_chunks(out, args.n_chunks, add)
+        return save(out, F, args.f_sky, L=cutoffs, grid_spec=grid_spec, **noise_meta(args))
     nodes = np.arange(len(gauss_legendre(args.lmax)[0]))
     if args.task is not None:
         nodes = np.array_split(nodes, args.n_chunks)[args.task]
     t = time.time()
-    F = fisher_factorisable(model, config.total_spectrum(args.lmax), cutoffs, nodes=nodes,
+    F = fisher_factorisable(model, config.total_spectrum(args.lmax, args.experiment), cutoffs, nodes=nodes,
                             x_block=args.x_block)
     print(f"{len(nodes)} mu nodes in {time.time() - t:.0f} s")
     if args.task is None:
-        return save(out, F, args.f_sky, L=cutoffs, grid_spec=grid_spec)
+        return save(out, F, args.f_sky, L=cutoffs, grid_spec=grid_spec, **noise_meta(args))
     path = chunk_dir(out) / f"{args.task:05d}.npz"
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(path, F_partial=F, L=cutoffs, nodes=nodes)
+    np.savez(path, F_partial=F, L=cutoffs, nodes=nodes, experiment=args.experiment)
     print(f"saved {path}")
 
 
@@ -134,7 +148,9 @@ def main():
     parser.add_argument("--grid", default=config.RADIAL_GRID, help="radial grid segments (kernels)")
     parser.add_argument("--kernels", help="kernel file for --source transfer")
     parser.add_argument("--ell-step", type=int, default=1, help="spacing of the F(L) cutoffs")
-    parser.add_argument("--f-sky", type=float, default=config.F_SKY)
+    parser.add_argument("--experiment", choices=tuple(config.EXPERIMENTS), default=config.EXPERIMENT,
+                        help="noise model (direct, fisher)")
+    parser.add_argument("--f-sky", type=float, help="default: the experiment's f_sky")
     parser.add_argument("--x-block", type=int, default=16, help="radial nodes per Z block (fisher)")
     parser.add_argument("--n-chunks", type=int, default=1)
     parser.add_argument("--task", type=int, help="chunk index for an array job")
@@ -142,6 +158,8 @@ def main():
     parser.add_argument("--save-grid", action="store_true", help="store zeta in the direct output")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
+    if args.f_sky is None:
+        args.f_sky = config.EXPERIMENTS[args.experiment]["f_sky"]
     {"kernels": kernels_command, "direct": direct_command, "fisher": fisher_command}[args.command](args)
 
 
