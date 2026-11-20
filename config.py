@@ -8,6 +8,7 @@ import numpy as np
 
 DATA = Path(__file__).parent / "data"
 OUTPUT = Path(__file__).parent / "output"
+FIGURES = Path(__file__).parent / "figures"
 CL_TT_FILE = DATA / "Cl_TT.npy"                    # lensed C_ell^TT, starts at ell = 2
 CHI_STAR_FILE = DATA / "chi_star.npy"
 TRANSFER_FILE = DATA / "Tgamma_lk_camb_source_lmax2000.npz"  # Delta_ell(k) from CAMB T_source

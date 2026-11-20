@@ -3,14 +3,17 @@
     python plot.py kernels --lmax 20 --sources sw transfer [--dimensionless] [--x 13900]
     python plot.py zeta --lmax 20 --sources sw transfer [--index-range 0 400]
     python plot.py snr --lmax 20 --curves direct:sw direct:transfer fisher:sw fisher:transfer
+    python plot.py snr --lmax 2000 --log --curves \
+        fisher:transfer=output/fisher_transfer_lmax100_base.npz+output/fisher_transfer_lmax2000.npz
 
 "transfer" reads data/kernels_lmax<lmax>.npz (python run.py kernels --lmax <lmax>); kernels
 are shown at the radial node closest to --x (default chi_*). The p = 0 leg is left out of
 the kernel plot: in the SW limit it is a delta shell, not a function of l. SNR curves are
-read from the run.py outputs output/<method>_<source>_lmax<lmax>.npz. Figures go to output/.
+read from the run.py outputs output/<method>_<source>_lmax<lmax>.npz. Figures go to figures/.
 """
 import argparse
 from itertools import combinations
+from pathlib import Path
 
 import matplotlib
 
@@ -31,7 +34,7 @@ METHOD_STYLE = {"direct": dict(ls="-", marker="o", ms=5), "fisher": dict(ls="--"
 
 
 def save(fig, name):
-    path = config.OUTPUT / name
+    path = config.FIGURES / name
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -139,29 +142,49 @@ def plot_zeta(args):
     save(fig, f"zeta_ladder_{'_'.join(args.sources)}_lmax{args.lmax}{tag}.png")
 
 
+def snr_curve(curve, lmax):
+    """L, SNR and f_sky for "method:source" (output/<method>_<source>_lmax<lmax>.npz) or
+    "method:source=a.npz+b.npz" (points of several runs joined; a later file wins at a shared L)."""
+    spec, _, files = curve.partition("=")
+    method, source = spec.split(":")
+    paths = [Path(p) for p in files.split("+")] if files else [config.OUTPUT / f"{method}_{source}_lmax{lmax}.npz"]
+    points, f_sky, grids = {}, set(), set()
+    for path in paths:
+        if not path.exists():
+            raise SystemExit(f"{path} is missing; make it with: python run.py {method} --source {source} "
+                             f"--lmax {lmax}")
+        with np.load(path) as f:
+            points.update(zip(f["L"].tolist(), f["snr"].tolist()))
+            f_sky.add(float(f["f_sky"]))
+            grids.add(str(f["grid_spec"]))
+    if len(f_sky) > 1 or len(grids) > 1:
+        raise SystemExit(f"{curve}: the files differ in f_sky {sorted(f_sky)} or radial grid {sorted(grids)}")
+    L = np.array(sorted(points))
+    return method, source, L, np.array([points[ell] for ell in L]), f_sky.pop()
+
+
 def plot_snr(args):
     fig, ax = plt.subplots(figsize=(9.0, 6.0), constrained_layout=True)
     f_sky = set()
     for curve in args.curves:
-        method, source = curve.split(":")
-        path = config.OUTPUT / f"{method}_{source}_lmax{args.lmax}.npz"
-        if not path.exists():
-            raise SystemExit(f"{path} is missing; make it with: python run.py {method} --source {source} "
-                             f"--lmax {args.lmax}")
-        with np.load(path) as f:
-            L, snr = f["L"], f["snr"]
-            f_sky.add(float(f["f_sky"]))
-        ax.plot(L, snr, color=SOURCE_COLOR[source], label=f"{NAME[method]}, {NAME[source]}: {snr[-1]:.4g}",
+        method, source, L, snr, fs = snr_curve(curve, args.lmax)
+        f_sky.add(fs)
+        ax.plot(L, snr, color=SOURCE_COLOR[source], label=f"{NAME[method]}, {NAME[source]}",
                 **METHOD_STYLE[method])
     if len(f_sky) > 1:
         raise SystemExit(f"the curves use different sky fractions: {sorted(f_sky)}")
-    ax.set_xlabel(r"$\ell_{\max}$", fontsize=14)
+    ax.set_xlabel(r"$\ell_{\max}$", fontsize=15)
+    ax.tick_params(labelsize=11)
     ax.set_ylabel(r"cumulative SNR$(\ell_{\max})$", fontsize=14)
-    ax.set_title(rf"Parity-odd contact template, $f_{{\rm sky}} = {f_sky.pop():g}$, $C_\ell+N_\ell$ noise")
-    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-    ax.grid(True, alpha=0.3)
+    ax.set_title(rf"Parity-odd squeezed template, $f_{{\rm sky}} = {f_sky.pop():g}$, $C_\ell+N_\ell$ noise")
+    if args.log:
+        ax.set(xscale="log", yscale="log")
+        ax.grid(True, which="both", alpha=0.25)
+    else:
+        ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        ax.grid(True, alpha=0.3)
     ax.legend(loc="upper left", fontsize=11)
-    save(fig, f"snr_lmax{args.lmax}.png")
+    save(fig, f"snr_lmax{args.lmax}{'_log' if args.log else ''}.png")
 
 
 def main():
@@ -170,7 +193,9 @@ def main():
     parser.add_argument("--lmax", type=int, required=True)
     parser.add_argument("--sources", nargs="+", choices=("sw", "transfer"), default=["sw"])
     parser.add_argument("--curves", nargs="+", default=["direct:sw", "fisher:sw"],
-                        help="method:source pairs, method in {direct, fisher}")
+                        help="method:source pairs, method in {direct, fisher}; method:source=a.npz+b.npz "
+                             "joins the points of several runs into one curve")
+    parser.add_argument("--log", action="store_true", help="snr: log-log axes")
     parser.add_argument("--dimensionless", action="store_true", help="kernels: scale B by chi*^(p+3)")
     parser.add_argument("--x", type=float, help="kernels: radius in Mpc for the transfer kernels")
     parser.add_argument("--index-range", type=int, nargs=2, metavar=("LO", "HI"), help="zeta: index window")

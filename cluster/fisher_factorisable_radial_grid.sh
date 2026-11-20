@@ -9,6 +9,15 @@
 # `python camb_inputs.py spectra --lmax 2000` (inside intjob). Kernels go to
 # data/kernels_lmax<LMAX>_<grid>.npz (kept and reused), results to output/fisher_transfer_lmax<LMAX>_<grid>.npz.
 # Settings can be overridden on the command line, e.g.  LMAX=50 N_CHUNKS=10 bash cluster/fisher_factorisable_radial_grid.sh submit
+#
+# Rerun one failed Fisher task (here task 7 of grid base), then the merge once it has finished:
+#   sbatch --constraint=x86-64-v3 --job-name=radial-fisher-base --array=7 --time=04:00:00 --mem=2G \
+#       --output=output/slurm/fisher_radial_base_%A_%a.out cluster/run.sbatch \
+#       fisher --source transfer --lmax 100 --ell-step 25 --kernels data/kernels_lmax100_base.npz \
+#       --out output/fisher_transfer_lmax100_base.npz --n-chunks 20
+#   sbatch --mem=2G --time=00:20:00 --output=output/slurm/fisher_radial_merge_base_%j.out cluster/run.sbatch \
+#       fisher --source transfer --lmax 100 --ell-step 25 --kernels data/kernels_lmax100_base.npz \
+#       --out output/fisher_transfer_lmax100_base.npz --n-chunks 20 --merge
 set -euo pipefail
 cd "$(dirname "$0")/.."                                 # codes_dev
 
@@ -67,7 +76,7 @@ submit)
         unset kid
     done
     echo "watch: squeue -u \$USER;  then: bash cluster/fisher_factorisable_radial_grid.sh summary"
-    echo "rerun a failed chunk i of a grid with the radial-fisher-<grid> command above and --array=i"
+    echo "if a Fisher task fails: see the rerun example in the header of $0"
     ;;
 summary)
     python - "$LMAX" "${NAMES[@]}" <<'EOF'
@@ -96,7 +105,7 @@ for i, ell in enumerate(L):
 EOF
     ;;
 *)
-    sed -n '2,13p' "$0"
+    sed -n '2,20p' "$0"
     exit 1
     ;;
 esac
